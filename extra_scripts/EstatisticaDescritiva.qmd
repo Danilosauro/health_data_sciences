@@ -1,0 +1,714 @@
+---
+title: "Estatística Descritiva dos dados"
+author: "Mikael M. Coletto"
+date: "10-22-2025"
+lang: pt-BR
+theme: cerulean
+engine: shiny
+execute:
+  warning: false
+  echo: true
+  cache: false
+  toc: true
+format:
+    html:
+      embed-resources: true
+      self-contained: false
+      code-fold: true
+      anchor-sections: true
+      smooth-scroll: true
+runtime: shiny
+---
+
+# Objetivo
+
+Analisar e compreender as desigualdades socioespaciais nos óbitos infantis de menores de um ano em Minas Gerais, através da integração de múltiplas fontes de dados oficiais: o Sistema de Informação sobre Mortalidade (SIM), o Sistema de Informação sobre Nascidos Vivos (SINASC) e o Índice Brasileiro de Privação (IBP). Esta análise exploratória busca identificar padrões geográficos, fatores socioeconômicos e determinantes contextuais que influenciam a distribuição heterogênea da mortalidade infantil no estado, fornecendo subsídios para políticas públicas de saúde materno-infantil mais equitativas e direcionadas.
+
+# Tratamento de dados
+## Pacotes utilizados
+```{r, bibliotecas}
+## Definindo repositório padrão
+options(
+  repos = c(CRAN = "[https://cloud.r-project.org](https://cloud.r-project.org)")
+)
+
+if (!require("pacman")) {
+  install.packages("pacman")
+}
+## Biblioteca "guarda-chuva" com diversas outras bibliotecas que auxiliam na manipulação e estruturação da base de dados
+pacman::p_load("tidyverse")
+# ## Biblioteca usada para manipulação de dados
+pacman::p_load("dplyr")
+# ## Biblioteca para construção de gráficos
+pacman::p_load("ggplot2")
+## Biblioteca para gráfico do tipo treemap
+pacman::p_load("treemapify")
+## Biblioteca para tabela
+pacman::p_load("gt")
+## Bibliotecas para dados geoespaciais
+pacman::p_load("sf", "geobr")
+## Biblioteca para gráficos interativos
+pacman::p_load("ggiraph")
+## Biblioteca para aplicação Shiny
+pacman::p_load("shiny")
+## Biblioteca para gráfico interativo
+pacman::p_load("ggiraph")
+
+
+options(scipen = 999999)
+```
+
+
+## Lendo a base de dados {background-image="../template-ppt/img1_adj_reveal.png"}
+```{r, read-data}
+## Bases de dados
+### IBP
+df_ibp <- readr::read_csv(paste0(here::here(
+  "Aula-Pos/Dados/dados-aula-painel/indice_brasileiro_de_privacao_(ibp)_municipal.csv"
+)))
+### Mortalidade
+df_sim <- readr::read_csv(here::here(
+  "Aula-Pos/Dados/dados-aula-painel/sistema_de_informacao_de_mortalidade_(sim)___a_partir_de_1996.csv"
+))
+### Nascimentos
+df_sinasc <- readr::read_csv(here::here(
+  "Aula-Pos/Dados/dados-aula-painel/sistema_de_informacao_sobre_nascidos_vivos_(sinasc)___a_partir_de_1996.csv"
+))
+
+# Criar dataframe com informações das bases
+dados_info <- tibble::tibble(
+  Base = c("IBP", "SIM", "SINASC"),
+  `N Linhas` = c(nrow(df_ibp), nrow(df_sim), nrow(df_sinasc)),
+  `N Colunas` = c(ncol(df_ibp), ncol(df_sim), ncol(df_sinasc)),
+  `Colunas` = c(
+    paste0(colnames(df_ibp), collapse = ", "),
+    paste0(colnames(df_sim), collapse = ", "),
+    paste0(colnames(df_sinasc), collapse = ", ")
+  )
+)
+
+# Criar tabela gt
+gt::gt(dados_info) |>
+  gt::tab_header(
+    title = "Resumo das Bases de Dados",
+    subtitle = "Informações sobre estrutura das bases IBP, SIM e SINASC"
+  ) |>
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_column_labels()
+  ) |>
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_body(columns = "Base")
+  ) |>
+  gt::cols_width(
+    gt::everything() ~ gt::px(200)
+  ) |>
+  gt::opt_table_lines(extent = "none") |>
+  gt::tab_options(
+    table.width = gt::px(800),
+    heading.title.font.size = gt::px(16),
+    heading.subtitle.font.size = gt::px(12)
+  )
+```
+
+### Pequena amostra de dados IBP
+
+```{r, sample-ibp}
+df_ibp |>
+  dplyr::slice_sample(n = 10) |>
+  gt::gt() |>
+  gt::tab_header(
+    title = "Amostra de Dados - IBP",
+    subtitle = "10 observações aleatórias"
+  ) |>
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_column_labels()
+  ) |>
+  gt::opt_table_lines(extent = "none") |>
+  gt::tab_options(
+    heading.title.font.size = gt::px(16),
+    heading.subtitle.font.size = gt::px(12)
+  )
+```
+
+### Pequena amostra de dados SIM
+
+```{r, sample-sim}
+df_sim |>
+  dplyr::slice_sample(n = 10) |>
+  gt::gt() |>
+  gt::tab_header(
+    title = "Amostra de Dados - SIM",
+    subtitle = "10 observações aleatórias"
+  ) |>
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_column_labels()
+  ) |>
+  gt::opt_table_lines(extent = "none") |>
+  gt::tab_options(
+    heading.title.font.size = gt::px(16),
+    heading.subtitle.font.size = gt::px(12)
+  )
+```
+
+### Pequena amostra de dados SINASC
+
+```{r, sample-sinasc}
+df_sinasc |>
+  dplyr::slice_sample(n = 10) |>
+  gt::gt() |>
+  gt::tab_header(
+    title = "Amostra de Dados - SINASC",
+    subtitle = "10 observações aleatórias"
+  ) |>
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_column_labels()
+  ) |>
+  gt::opt_table_lines(extent = "none") |>
+  gt::tab_options(
+    heading.title.font.size = gt::px(16),
+    heading.subtitle.font.size = gt::px(12)
+  )
+```
+
+## Agregando dados
+
+Como vamos trabalhar com uma taxa municipal, vamos agregar as contagens de óbito e nascimentos por município.
+Mas primeiro, como vimos, é necessário selecionar apenas os óbitos de menores de um ano da base de mortalidade. Como a Idade vem codificada, vamos buscar no dicionário de dados para verificar o valor correspondente a menores de um ano.
+
+Pelo dicionário temos:
+"Idade: composto de dois subcampos.
+- O primeiro, de 1 dígito, indica a unidade da idade (se 1 = minuto,
+se 2 = hora, se 3 = mês, se 4 = ano, se = 5 idade maior que 100 anos).
+- O segundo, de dois dígitos, indica a quantidade de unidades:
+Idade menor de 1 hora: subcampo varia de 01 e 59 (minutos); De 1
+a 23 Horas: subcampo varia de 01 a 23 (horas); De 24 horas e 29
+dias: subcampo varia de 01 a 29 (dias); De 1 a menos de 12 meses
+completos: subcampo varia de 01 a 11 (meses); Anos - subcampo
+varia de 00 a 99;
+- 9 - ignorado"
+
+Portanto, vamos tratar essa variável de idade, removendo os valores que não correspondem a nossa pesquisa (primeiro subcampo maior ou igual a 4).
+
+```{r, removendo-idades-sim}
+df_sim <- df_sim |>
+  dplyr::filter(as.integer(stringr::str_sub(IDADE, 1, 1)) < 4)
+
+nrow(df_sim)
+```
+
+Verificamos que agora 1297093 óbitos, ou seja, 1297093 pessoas que morreram antes de completar um ano.
+
+O próximo passo vai ser criar tabelas de contagens para cada base, agregando por município.
+
+```{r, agregando-sim-sinasc}
+df_sim_mun <- df_sim |>
+  dplyr::mutate(CODMUNRES = substr(as.character(CODMUNRES), 1, 6)) |>
+  dplyr::group_by(CODMUNRES) |>
+  dplyr::summarize(
+    `n_obitos` = dplyr::n()
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::distinct(CODMUNRES, .keep_all = T)
+
+df_sinasc_mun <- df_sinasc |>
+  dplyr::mutate(CODMUNRES = substr(as.character(CODMUNRES), 1, 6)) |>
+  dplyr::group_by(CODMUNRES) |>
+  dplyr::summarize(
+    `n_nascimentos` = dplyr::n()
+  ) |>
+  dplyr::distinct(CODMUNRES, .keep_all = T)
+```
+
+Um ponto importante a se comentar é que, como usamos um período bastante grande de dados, eu verifiquei que existem dois tipos de códigos para município: 6 e 7 dígitos, por já trabalhar com esses dados, eu sei que o último dígito é apenas um verificador, e para agrupar o mesmo município eu só fiz a seleção dos primeiros 6 dígitos.
+
+Outra coisa que notei ao fazer a agregação foi que ao final, agrupando por município, possuímos respectivamente 5625 e 5658 municípios únicos, o que não faz sentido já que a última tabela do IBGE lista 5570 (ou 5571 com o Distrito Federal) municípios, porém isso se dá a códigos de municípios que não existem mais devido a fusões, desemembramentos ou outras mudanças administrativas ao longo do tempo.
+Para tratar isso, irei agregar esses dados com a base do IBP, que já está agregada por município.
+
+```{r, base-ibp-sim-sinasc}
+df_ibp_sim_sinasc <- df_ibp |>
+  dplyr::mutate(CODMUNRES = as.integer(codmun6)) |>
+  dplyr::left_join(
+    df_sim_mun |> dplyr::mutate(CODMUNRES = as.integer(CODMUNRES)),
+    by = "CODMUNRES"
+  ) |>
+  dplyr::left_join(
+    df_sinasc_mun |> dplyr::mutate(CODMUNRES = as.integer(CODMUNRES)),
+    by = "CODMUNRES"
+  )
+``` 
+
+## Calculando a taxa de óbitos por município
+
+Para calcular a taxa de óbitos por município, vamos cálcular a razão entre o número de óbitos e o número de nascimentos multiplicando por 1.000 para normalizar essa taxa.
+
+A fórmula utilizada é:
+
+$$\text{Taxa de mortalidade infantil} = \left(\frac{\text{Óbitos de crianças} < 1 \text{ ano}}{\text{Nascidos vivos}}\right) \times 1.000$$
+
+```{r, calculando-taxa}
+df_ibp_sim_sinasc <- df_ibp_sim_sinasc |>
+  dplyr::mutate(
+    `taxa_obito_infantil` = (`n_obitos` / `n_nascimentos`) * 1000
+  )
+```
+
+### Restringindo ao escopo da pesquisa e selecionando variáveis
+
+```{r, filtrando-dados}
+df_ibp_sim_sinasc <- df_ibp_sim_sinasc |>
+  dplyr::filter(nome_da_uf == "Minas Gerais") |>
+  dplyr::select(
+    uf,
+    nome_da_uf,
+    cod_mun = cod_municipio,
+    nome_do_municipio,
+    ibp_zscore = measure_1f_12,
+    ibp_quintil = q_measure_1f_12,
+    n_obitos,
+    n_nascimentos,
+    taxa_obito_infantil
+  )
+```
+
+# Criando visualizações
+
+## Mapa coroplético
+```{r, grafico-mapa}
+## Pacote geobr c/ dados geoespaciais do Brasil
+# remotes::install_github("ipeaGIT/geobr", subdir = "r-package")
+
+# Dados geoespaciais de MG
+df_geo_mg <- geobr::read_municipality(
+  code_muni = "MG",
+  year = 2010,
+  showProgress = FALSE
+)
+
+df_ibp_sim_sinasc_geo <- df_ibp_sim_sinasc |>
+  dplyr::left_join(
+    df_geo_mg |> dplyr::select(code_muni, geom),
+    by = c("cod_mun" = "code_muni")
+  ) |>
+  sf::st_as_sf()
+
+# Criar gráfico interativo com ggiraph
+mapa_interativo <- ggplot(df_ibp_sim_sinasc_geo) +
+  ggiraph::geom_sf_interactive(
+    aes(
+      fill = taxa_obito_infantil,
+      tooltip = paste0(
+        "Município: ",
+        nome_do_municipio,
+        "\nTaxa: ",
+        round(taxa_obito_infantil, 2),
+        "\nÓbitos: ",
+        n_obitos,
+        "\nNascimentos: ",
+        n_nascimentos
+      ),
+      data_id = cod_mun
+    )
+  ) +
+  scale_fill_gradientn(
+    name = "Taxa de óbitos infantis\n(por 1.000 nascidos vivos)",
+    colors = c(
+      "#ffffcc",
+      "#ffeda0",
+      "#fed976",
+      "#feb24c",
+      "#fd8d3c",
+      "#fc4e2a",
+      "#e31a1c",
+      "#bd0026",
+      "#800026"
+    ),
+    limits = c(0, 50),
+    breaks = seq(0, 50, 10),
+    labels = paste0(seq(0, 50, 10))
+  ) +
+  theme_void() +
+  labs(
+    title = "Taxa de Mortalidade Infantil em Minas Gerais",
+    subtitle = "Óbitos de menores de um ano por 1.000 nascidos vivos"
+  )
+
+# Converter para formato girafe e renderizar com Shiny
+ggiraph::girafe(
+  ggobj = mapa_interativo,
+  options = list(
+    opts_toolbar(
+      saveaspng = TRUE,
+      pngname = "mapa-mg-taxa-mortalidade.png"
+    )
+  )
+)
+
+# Adicionando camada de bolhas com centroids dos municípios
+# Validar e corrigir geometrias antes de calcular centroids
+df_ibp_sim_sinasc_geo_valid <- df_ibp_sim_sinasc_geo |>
+  sf::st_make_valid() |>
+  dplyr::filter(!sf::st_is_empty(geom))
+
+# Calcular centroids dos municípios usando método mais robusto
+df_ibp_sim_sinasc_centroids <- df_ibp_sim_sinasc_geo_valid |>
+  sf::st_centroid(of_largest_polygon = TRUE) |>
+  # Extrair coordenadas x e y para uso no ggplot
+  dplyr::mutate(
+    x = sf::st_coordinates(geom)[, 1],
+    y = sf::st_coordinates(geom)[, 2]
+  )
+
+# Definir cores para IBP quintil
+cores_ibp <- c(
+  "5" = "#88231D", # Azul para M. Baixo
+  "4" = "#D15153", # Azul claro para Baixo
+  "3" = "#ED9394", # Verde-azulado para Médio
+  "2" = "#F5CCA6", # Verde claro para Alto
+  "1" = "#F5F3E4" # Amarelo para M. Alto
+)
+
+# Criar gráfico com camada de bolhas
+mapa_com_bolhas <- ggplot(df_ibp_sim_sinasc_geo_valid) +
+  # Camada base do mapa coroplético em verde
+  ggiraph::geom_sf_interactive(
+    aes(
+      tooltip = paste0(
+        "Município: ",
+        nome_do_municipio,
+        "\nTaxa: ",
+        round(taxa_obito_infantil, 2),
+        "\nÓbitos: ",
+        n_obitos,
+        "\nNascimentos: ",
+        n_nascimentos
+      ),
+      data_id = cod_mun
+    ),
+    fill = "#e6f3e6", # Verde claro para o mapa base
+    color = "#666666",
+    size = 0.5
+  ) +
+  # Camada de bolhas nos centroids com cores do IBP
+  ggiraph::geom_point_interactive(
+    data = df_ibp_sim_sinasc_centroids,
+    aes(
+      x = x,
+      y = y,
+      size = taxa_obito_infantil,
+      fill = factor(ibp_quintil),
+      tooltip = paste0(
+        "Município: ",
+        nome_do_municipio,
+        "\nTaxa: ",
+        round(taxa_obito_infantil, 2),
+        "\nÓbitos: ",
+        n_obitos,
+        "\nNascimentos: ",
+        n_nascimentos,
+        "\nIBP Z-score: ",
+        round(ibp_zscore, 2),
+        "\nIBP Quintil: ",
+        ibp_quintil
+      ),
+      data_id = cod_mun
+    ),
+    alpha = 0.8,
+    shape = 21,
+    stroke = 1.5,
+    color = "#333333"
+  ) +
+  scale_fill_manual(
+    name = "IBP Quintil",
+    values = cores_ibp,
+    labels = c("M. Baixo", "Baixo", "Médio", "Alto", "M. Alto")
+  ) +
+  scale_size_continuous(
+    name = "Taxa de óbitos infantis\n(por 1.000 nascidos vivos)",
+    range = c(1, 5), # Aumentado range para maior diferença visual
+    limits = c(
+      0,
+      max(df_ibp_sim_sinasc_centroids$taxa_obito_infantil, na.rm = TRUE)
+    ),
+    breaks = quantile(
+      df_ibp_sim_sinasc_centroids$taxa_obito_infantil,
+      probs = c(0.1, 0.3, 0.5, 0.7, 0.9),
+      na.rm = TRUE
+    ),
+    labels = round(
+      quantile(
+        df_ibp_sim_sinasc_centroids$taxa_obito_infantil,
+        probs = c(0.1, 0.3, 0.5, 0.7, 0.9),
+        na.rm = TRUE
+      ),
+      1
+    )
+  ) +
+  theme_void() +
+  labs(
+    title = "Taxa de Mortalidade Infantil em Minas Gerais",
+    subtitle = "Óbitos de menores de um ano por 1.000 nascidos vivos com bolhas nos centroids municipais"
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+# Renderizar mapa com bolhas
+ggiraph::girafe(
+  ggobj = mapa_com_bolhas,
+  options = list(
+    opts_toolbar(
+      saveaspng = TRUE,
+      pngname = "mapa-mg-taxa-mortalidade-com-bolhas.png"
+    )
+  )
+)
+
+```
+
+## Gráfico de barras
+```{r, grafico-barras}
+
+cores <- c("#88231D", "#D15153", "#ED9394", "#F5CCA6", "#F5F3E4")
+rotulos_quintil <- c(
+  "1" = "M. Baixo",
+  "2" = "Baixo",
+  "3" = "Médio",
+  "4" = "Alto",
+  "5" = "M. Alto"
+)
+
+# Agregar dados por quintil para o gráfico de barras
+df_ibp_quintil_barras <- df_ibp_sim_sinasc |>
+  dplyr::group_by(ibp_quintil) |>
+  dplyr::summarize(
+    total_obitos = sum(n_obitos, na.rm = TRUE),
+    total_nascimentos = sum(n_nascimentos, na.rm = TRUE),
+    n_municipios = dplyr::n(),
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    rotulo_quintil = case_when(
+      ibp_quintil == 1 ~ "M. Baixo",
+      ibp_quintil == 2 ~ "Baixo",
+      ibp_quintil == 3 ~ "Médio",
+      ibp_quintil == 4 ~ "Alto",
+      ibp_quintil == 5 ~ "M. Alto"
+    )
+  )
+
+# Criar gráfico interativo com ggiraph
+grafico_barras_interativo <- df_ibp_quintil_barras |>
+  ggplot(aes(
+    x = factor(ibp_quintil),
+    y = n_municipios,
+    fill = factor(ibp_quintil),
+    tooltip = paste0(
+      "Quintil: ",
+      rotulo_quintil,
+      "\nTotal Óbitos: ",
+      total_obitos,
+      "\nTotal Nascimentos: ",
+      total_nascimentos,
+      "\nNº Municípios: ",
+      n_municipios
+    ),
+    data_id = ibp_quintil
+  )) +
+  ggiraph::geom_bar_interactive(stat = "identity") +
+  scale_fill_manual(values = cores, name = "Quintil") +
+  scale_x_discrete(labels = rotulos_quintil) +
+  theme_minimal() +
+  labs(
+    title = "Taxa de Mortalidade Infantil em Minas Gerais por quintil do IBP",
+    subtitle = "Óbitos de menores de um ano por 1.000 nascidos vivos (média por quintil)",
+    x = "Quintil",
+    y = "Taxa de Óbitos Infantis (por 1.000 nascidos vivos)"
+  )
+
+# Renderizar gráfico interativo
+girafe(
+  ggobj = grafico_barras_interativo,
+  options = list(
+    opts_toolbar(
+      saveaspng = TRUE,
+      pngname = "grafico-barras-ibp-taxa-mortalidade.png"
+    )
+  )
+)
+```
+
+```{r, barras-empilhadas}
+# Criar categorias para taxa_obito_infantil
+df_ibp_sim_sinasc_categ <- df_ibp_sim_sinasc |>
+  dplyr::mutate(
+    taxa_categoria = case_when(
+      taxa_obito_infantil >= 0 & taxa_obito_infantil < 10 ~ "0-10",
+      taxa_obito_infantil >= 10 & taxa_obito_infantil < 20 ~ "10-20",
+      taxa_obito_infantil >= 20 & taxa_obito_infantil < 30 ~ "20-30",
+      taxa_obito_infantil >= 30 & taxa_obito_infantil < 40 ~ "30-40",
+      taxa_obito_infantil >= 40 & taxa_obito_infantil < 50 ~ "40-50",
+      TRUE ~ "50+"
+    ),
+    taxa_categoria = factor(
+      taxa_categoria,
+      levels = c("0-10", "10-20", "20-30", "30-40", "40-50", "50+")
+    ),
+    ibp_quintil_rotulo = case_when(
+      ibp_quintil == 1 ~ "M. Baixo",
+      ibp_quintil == 2 ~ "Baixo",
+      ibp_quintil == 3 ~ "Médio",
+      ibp_quintil == 4 ~ "Alto",
+      ibp_quintil == 5 ~ "M. Alto"
+    ),
+    ibp_quintil_rotulo = factor(
+      ibp_quintil_rotulo,
+      levels = c("M. Baixo", "Baixo", "Médio", "Alto", "M. Alto")
+    )
+  ) |>
+  dplyr::filter(!is.na(taxa_categoria) & !is.na(ibp_quintil_rotulo))
+
+# Agregar dados por categoria de taxa e quintil do IBP
+df_empilhado <- df_ibp_sim_sinasc_categ |>
+  dplyr::group_by(taxa_categoria, ibp_quintil_rotulo) |>
+  dplyr::summarize(
+    total_obitos = sum(n_obitos, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Cores para o gráfico empilhado com maior contraste
+cores_taxa <- c(
+  "0-10" = "#2E86AB", # Azul
+  "10-20" = "#A23B72", # Rosa
+  "20-30" = "#F18F01", # Laranja
+  "30-40" = "#C73E1D", # Vermelho
+  "40-50" = "#6B2D5C", # Roxo
+  "50+" = "#1B5E20" # Verde escuro
+)
+
+# Criar gráfico de barras empilhadas
+grafico_empilhado <- df_empilhado |>
+  ggplot(aes(
+    x = ibp_quintil_rotulo,
+    y = total_obitos,
+    fill = taxa_categoria,
+    tooltip = paste0(
+      "IBP Quintil: ",
+      ibp_quintil_rotulo,
+      "\nCategoria Taxa: ",
+      taxa_categoria,
+      "\nTotal Óbitos: ",
+      total_obitos
+    ),
+    data_id = paste0(ibp_quintil_rotulo, "_", taxa_categoria)
+  )) +
+  ggiraph::geom_bar_interactive(stat = "identity", position = "stack") +
+  scale_fill_manual(
+    values = cores_taxa,
+    name = "Taxa de Óbitos\nInfantis (por 1.000 NV)"
+  ) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(
+    title = "Distribuição de Ób. Inf. por Quintil do IBP e Categoria de Taxa",
+    subtitle = "Número de óbitos por TMI agregada e por quintil do IBP",
+    x = "Quintil do IBP",
+    y = "Número Total de Óbitos"
+  ) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9)
+  )
+
+# Renderizar gráfico interativo
+girafe(
+  ggobj = grafico_empilhado,
+  options = list(
+    opts_toolbar(
+      saveaspng = TRUE,
+      pngname = "grafico-barras-empilhadas-ibp-taxa-categoria.png"
+    )
+  )
+)
+```
+
+## Gráfico de "árvore"
+```{r, grafico-arvore}
+# Agregar dados por quintil para o treemap
+df_ibp_quintil <- df_ibp_sim_sinasc |>
+  dplyr::group_by(ibp_quintil) |>
+  dplyr::summarize(
+    total_obitos = sum(n_obitos, na.rm = TRUE),
+    total_nascimentos = sum(n_nascimentos, na.rm = TRUE),
+    n_municipios = dplyr::n(),
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    rotulo_quintil = case_when(
+      ibp_quintil == 1 ~ "M. Baixo",
+      ibp_quintil == 2 ~ "Baixo",
+      ibp_quintil == 3 ~ "Médio",
+      ibp_quintil == 4 ~ "Alto",
+      ibp_quintil == 5 ~ "M. Alto"
+    )
+  )
+
+# Criar gráfico treemap
+graf_treemap <- df_ibp_quintil |>
+  ggplot(aes(
+    area = n_municipios,
+    fill = factor(ibp_quintil),
+    label = rotulo_quintil
+  )) +
+  treemapify::geom_treemap() +
+  treemapify::geom_treemap_text(
+    colour = "black",
+    place = "bottomleft"
+  ) +
+  scale_fill_manual(
+    values = cores,
+    name = "Quintil",
+    labels = c("M. Baixo", "Baixo", "Médio", "Alto", "M. Alto")
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Taxa de Mortalidade Infantil em Minas Gerais por quintil do IBP",
+    subtitle = "Óbitos de menores de um ano por 1.000 nascidos vivos (média por quintil)"
+  ) +
+  theme(legend.position = "none")
+
+graf_treemap
+
+# Criar gráfico treemap
+graf_treemap_text <- df_ibp_quintil |>
+  ggplot(aes(
+    area = n_municipios,
+    label = rotulo_quintil,
+    fill = "#88231D"
+  )) +
+  treemapify::geom_treemap() +
+  treemapify::geom_treemap_text(
+    colour = "black",
+    place = "bottomleft"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Taxa de Mortalidade Infantil em Minas Gerais por quintil do IBP",
+    subtitle = "Óbitos de menores de um ano por 1.000 nascidos vivos (média por quintil)"
+  ) +
+  theme(legend.position = "none")
+
+graf_treemap_text
+
+```
